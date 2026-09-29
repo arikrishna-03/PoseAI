@@ -1,14 +1,20 @@
 {
   "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "target": "ES2022",
-    "module": "commonjs",
-    "moduleResolution": "node",
-    "outDir": "./dist",
-    "rootDir": "./src",
+    "outDir": "dist",
+    "rootDir": "src",
+    "sourceMap": true,
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true
   },
-  "include": ["src/**/*"]
+  "compileOnSave": true,
+  "include": [
+    "src"
+  ]
 }

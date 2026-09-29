@@ -1,79 +1,130 @@
-import express, { Request, Response } from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import { ClaudeVisionService } from './claude_service';
-import { RateLimiter } from './rate_limiter';
+import crypto from 'crypto';
+import { onRequest } from 'firebase-functions/v2/https';
+import { defineSecret } from 'firebase-functions/params';
+import { GenerateIdeasRequestSchema, MAX_DECODED_IMAGE_BYTES } from './schema';
+import { verifyAuthToken } from './auth';
+import { checkAndIncrementUserDailyLimit, checkIpRateLimit } from './rateLimit';
+import { AiService, hashUid } from './ai';
+import { AppError } from './errors';
 
-dotenv.config();
+// Secret definition for Firebase Secret Manager
+export const anthropicApiKey = defineSecret('ANTHROPIC_API_KEY');
 
-const app = express();
-const port = process.env.PORT || 8080;
+export const generateIdeas = onRequest(
+  {
+    region: 'us-central1',
+    memory: '512MiB',
+    timeoutSeconds: 60,
+    maxInstances: 50,
+    secrets: [anthropicApiKey]
+  },
+  async (req, res): Promise<void> => {
+    const requestId = crypto.randomUUID();
+    const startTime = Date.now();
+    let currentUid = 'anonymous';
 
-// Middleware
-app.use(cors({ origin: true }));
-// Limit request size to 6MB for base64 images
-app.use(express.json({ limit: '6mb' }));
+    try {
+      // 1. Method check: POST only
+      if (req.method !== 'POST') {
+        throw AppError.invalidRequest('Method not allowed. Use POST /generateIdeas');
+      }
 
-const claudeService = new ClaudeVisionService();
+      // 2. IP-level rate limiting
+      const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '127.0.0.1';
+      checkIpRateLimit(clientIp);
 
-// Health check
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', service: 'PoseMuse Vision AI Backend' });
-});
+      // 3. Body size guard (Raw request body limit: 3 MB)
+      const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+      if (contentLength > 3 * 1024 * 1024) {
+        throw AppError.imageTooLarge('Request payload exceeds maximum allowed size of 3 MB');
+      }
 
-/**
- * POST /generate-ideas
- * Body: { image_base64, people_count_hint, user_preferences, language }
- */
-app.post('/generate-ideas', async (req: Request, res: Response): Promise<void> => {
-  try {
-    // 1. Client identification & Anonymous Auth
-    const authHeader = req.headers.authorization;
-    const clientId = (authHeader ? authHeader.replace('Bearer ', '') : req.ip) || 'anonymous-user';
+      // 4. Firebase Authentication verification
+      currentUid = await verifyAuthToken(req);
 
-    // 2. Rate limiting check (30 scans per day)
-    const rateCheck = RateLimiter.checkLimit(clientId);
-    res.setHeader('X-RateLimit-Remaining', rateCheck.remaining);
+      // 5. Parse and validate request schema with Zod
+      const parseResult = GenerateIdeasRequestSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        const issues = parseResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ');
+        throw AppError.invalidRequest(`Invalid request body: ${issues}`);
+      }
+      const requestData = parseResult.data;
 
-    if (!rateCheck.allowed) {
-      res.status(429).json({
-        error: 'Rate limit reached',
-        message: 'You have reached your limit of 30 scans per day. Resets in 24 hours.'
+      // 6. Decode Base64 and validate JPEG binary format & size limits
+      let imageBuffer: Buffer;
+      try {
+        imageBuffer = Buffer.from(requestData.image_base64, 'base64');
+      } catch (_) {
+        throw AppError.invalidRequest('Failed to decode base64 image data');
+      }
+
+      // Check max 1.5 MB decoded
+      if (imageBuffer.length > MAX_DECODED_IMAGE_BYTES) {
+        throw AppError.imageTooLarge(
+          `Decoded image size of ${(imageBuffer.length / (1024 * 1024)).toFixed(2)} MB exceeds maximum allowed limit of 1.5 MB`
+        );
+      }
+
+      // Verify JPEG magic bytes (FF D8 FF)
+      if (
+        imageBuffer.length < 3 ||
+        imageBuffer[0] !== 0xff ||
+        imageBuffer[1] !== 0xd8 ||
+        imageBuffer[2] !== 0xff
+      ) {
+        throw AppError.invalidRequest('Invalid image format. Only JPEG format (magic bytes FF D8 FF) is accepted');
+      }
+
+      // 7. Atomic user daily rate limiting in Firestore
+      const rateLimitResult = await checkAndIncrementUserDailyLimit(currentUid);
+      res.setHeader('X-RateLimit-Remaining', rateLimitResult.remaining.toString());
+      res.setHeader('X-RateLimit-Reset', rateLimitResult.resetTime);
+
+      // 8. Call Anthropic Claude Vision API
+      const apiKey = anthropicApiKey.value() || process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        console.error('Missing ANTHROPIC_API_KEY secret');
+        throw AppError.aiInvalidResponse('AI service configuration error');
+      }
+
+      const aiService = new AiService(apiKey);
+      const response = await aiService.generateIdeasWithRetry(requestData, {
+        requestId,
+        uid: currentUid
       });
-      return;
-    }
 
-    // 3. Request payload validation
-    const { image_base64, people_count_hint, user_preferences, language } = req.body;
-    if (!image_base64 || typeof image_base64 !== 'string') {
-      res.status(400).json({ error: 'Missing or invalid image_base64 parameter' });
-      return;
-    }
+      const totalDurationMs = Date.now() - startTime;
+      console.log(
+        JSON.stringify({
+          event: 'request_completed',
+          requestId,
+          uidHash: hashUid(currentUid),
+          totalDurationMs,
+          ideasReturned: response.ideas.length
+        })
+      );
 
-    // 4. Generate ideas via Claude Vision AI
-    const result = await claudeService.generateIdeas({
-      image_base64,
-      people_count_hint,
-      user_preferences,
-      language
-    });
+      res.status(200).json(response);
+    } catch (err: any) {
+      const totalDurationMs = Date.now() - startTime;
+      const appError: AppError =
+        err instanceof AppError
+          ? err
+          : AppError.aiInvalidResponse(err.message || 'An unexpected error occurred');
 
-    res.json(result);
-  } catch (err: any) {
-    console.error('Error generating ideas:', err);
-    if (err.name === 'AbortError') {
-      res.status(504).json({ error: 'Vision AI request timed out. Please try again.' });
-      return;
+      console.error(
+        JSON.stringify({
+          event: 'request_error',
+          requestId,
+          uidHash: hashUid(currentUid),
+          statusCode: appError.statusCode,
+          errorCode: appError.code,
+          errorMessage: appError.message,
+          totalDurationMs
+        })
+      );
+
+      res.status(appError.statusCode).json(appError.toResponseBody());
     }
-    res.status(500).json({
-      error: 'Failed to generate ideas',
-      message: err.message || 'Unknown server error'
-    });
   }
-});
-
-app.listen(port, () => {
-  console.log(`PoseMuse Backend running on port ${port}`);
-});
-
-export default app;
+);
