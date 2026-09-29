@@ -17,19 +17,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   final List<_OnboardingPageData> _pages = const [
     _OnboardingPageData(
-      icon: Icons.accessibility_new_rounded,
-      title: 'Ghost Pose Guidance',
-      subtitle: 'Pick any pose from 40+ curated presets. A faint semi-transparent skeleton overlays your camera so you can match the posture perfectly.',
+      icon: Icons.camera_enhance_rounded,
+      title: 'Scan Any Scene',
+      subtitle: 'Point the camera at any setting with people and tap "Get Ideas". PoseMuse analyzes the exact environment, lighting, and props.',
     ),
     _OnboardingPageData(
-      icon: Icons.psychology_rounded,
-      title: 'Real-Time AI Feedback',
-      subtitle: 'PoseMuse detects 33 body landmarks on-device in real-time and tells you exactly how to adjust—e.g. "Raise left elbow" or "Straighten back".',
+      icon: Icons.auto_awesome_rounded,
+      title: 'Fresh Creative Ideas',
+      subtitle: 'No fixed templates! Vision AI crafts original photo concepts tailored to what is physically visible—stairs, railings, or golden backlight.',
     ),
     _OnboardingPageData(
-      icon: Icons.camera_rounded,
-      title: 'Hands-Free Auto-Capture',
-      subtitle: 'Hit an 85% match and hold it for 1 second—PoseMuse snaps the photo automatically without having to touch the screen!',
+      icon: Icons.directions_run_rounded,
+      title: 'Live Skeleton Coaching',
+      subtitle: 'Ghost skeletons guide each person into position with live alignment scoring, real-time hints, and hands-free auto-capture!',
     ),
   ];
 

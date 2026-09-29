@@ -1,214 +1,187 @@
 # PoseMuse 📸✨
-### AI Photo Pose Director (Flutter & On-Device ML)
+### AI Photographer Assistant & Real-Time Pose Director
 
-**PoseMuse** is a cross-platform mobile application built in Flutter (Dart) designed to revolutionize photo taking. It provides real-time, on-device pose guidance for portraits, couples, and group photos. The app projects a semi-transparent "ghost" skeleton guide onto the live camera stream, matches the subject's posture in real-time, provides spoken/text hints, and automatically triggers the shutter when the target pose alignment hits 85%+.
+**PoseMuse** is an intelligent photographer assistant built in Flutter (Dart) powered by Cloud Vision AI (Anthropic Claude) and on-device multi-person pose tracking. 
 
----
+The user points their camera at any setting with one or more people and taps **"Get Ideas"**. The app captures a snapshot, analyzes the physical surroundings, lighting, people, outfits, and props, and generates **5–6 fresh, achievable photo ideas crafted specifically for that scene**. When the user picks an idea, PoseMuse projects semi-transparent ghost skeletons, coaches each subject into position with real-time feedback and voice tips, and triggers auto-capture when the alignment reaches 85%+.
 
-## 🌟 Core Features
-
-- **40+ Curated Poses**: Stored in offline JSON format across 6 categories:
-  - *Solo Portrait*, *Standing*, *Sitting*, *Candid*, *Couple (2 people)*, and *Group (3+ people)*.
-- **Smart Person-Count Recommendations**:
-  - Automatically identifies whether 1, 2, or 3+ subjects are in frame and highlights relevant poses (e.g. suggests romantic couple poses when two people enter view).
-- **Semi-Transparent Ghost Overlay**:
-  - Displays the target pose skeleton faintly over the camera viewfinder as a visual reference guide.
-- **Dynamic Real-Time Skeleton Feedback**:
-  - CustomPainter draws the user's detected 33 MediaPipe landmarks with glowing joints and dynamic color-coded feedback:
-    - 🔴 **Red (<55%)**: Initial positioning / off-pose
-    - 🟡 **Yellow (55% - 84%)**: Getting close, adjust limbs
-    - 🟢 **Neon Mint (≥85%)**: Target reached!
-- **Actionable Posing Hints**:
-  - Directional guidance such as *"Raise your left elbow"*, *"Straighten left leg"*, or *"Stand up straighter"*.
-- **Hands-Free Auto-Capture**:
-  - When the user holds the target pose at ≥85% match for 1.0 second, PoseMuse initiates an animated countdown and automatically snaps the photo.
-- **Local Gallery**:
-  - View saved guided photos with timestamp, matching pose name, and alignment percentage. Share directly or delete.
-- **100% Offline & Private**:
-  - Zero cloud dependencies. MediaPipe Pose detection runs entirely on-device hardware. No biometric data or video streams ever leave the phone.
+> **No Fixed Pose Library • No Template Engine**  
+> Every idea is generated fresh on the fly by the Cloud Vision AI for every unique scan.
 
 ---
 
-## 🏗️ Architecture & Folder Structure
+## 🌟 Core Flow
 
-Built using **feature-first clean architecture** with Riverpod state management:
+1. **SCAN**: Tap *"Get Ideas"*. The app takes a snapshot, downsizes it to max 768px on the long side (JPEG ~70%), and transmits it to the backend.
+2. **ANALYZE & GENERATE (Cloud Vision AI)**:
+   - Evaluates: location type, lighting direction/quality, subject count & placement, outfits & colors, props (stairs, railings, walls, benches, trees), and negative space.
+   - Generates 5–6 unique photo ideas with photographer camera direction (height, angle, distance, orientation), expression tips, and **17 COCO normalized keypoints per person**.
+3. **CHOOSE**: Ideas slide up as swipeable cards displaying title, *"why this works here"*, camera tips, difficulty pill, and a mini skeleton preview.
+4. **COACH (On-Device)**: Ghost skeletons overlay the live camera feed. Multi-person tracking matches subjects to their target positions (handling spatial swaps automatically) and provides visual and voice hints (e.g. *"Raise your left elbow"*).
+5. **CAPTURE**: Auto-capture triggers when the match holds at ≥85% for 1 second continuously, or users can tap manual shutter with an optional **Burst of 3**.
+6. **REVIEW & LEARN**: Users rate ideas (Thumbs Up / Down). Liked/disliked titles are saved locally in Hive and sent in subsequent scan requests so the AI learns user taste over time!
+
+---
+
+## 🔒 Security & Privacy Architecture
+
+- **API Key Secrecy**: The mobile app **NEVER** contains the AI API key. All Claude Vision API calls go through the serverless backend in [`functions/`](file:///a:/guit%20hub%20cloned%20files/poseai/pose_muse/functions).
+- **Zero Image Retention**: Snapshots are processed strictly in-memory by the backend and discarded immediately after generation. No user images or biometric landmarks are ever stored in the cloud.
+- **Privacy Notice**: Displayed transparently to users during onboarding:  
+  *“Your snapshot is sent securely to AI to create ideas and is not stored.”*
+
+---
+
+## 📂 Project Architecture
 
 ```
 pose_muse/
-├── pubspec.yaml                       # Dependencies & assets declaration
-├── analysis_options.yaml              # Linting rules
-├── README.md                          # Documentation & build instructions
-├── assets/
-│   ├── poses/
-│   │   └── poses.json                 # 49 Curated poses with 33-point landmarks
-│   └── icons/                         # App & category icons
-├── android/
-│   └── app/src/main/AndroidManifest.xml # Camera, storage & vibration permissions
-├── ios/
-│   └── Runner/Info.plist              # Camera & photo library privacy usage keys
+├── functions/                         # Cloud Vision AI Backend (Node.js/TypeScript)
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── .env.example                   # Environment configuration (ANTHROPIC_API_KEY)
+│   └── src/
+│       ├── index.ts                   # Express server with POST /generate-ideas
+│       ├── claude_service.ts          # Anthropic Claude Vision API caller with 15s timeout & retry
+│       ├── validator.ts               # Zod response validation & bone ratio sanity check
+│       ├── rate_limiter.ts            # Anonymous user rate limiter (30 scans/day)
+│       └── validator.test.ts          # Unit tests for schema validation
+├── prompt/
+│   ├── ai_prompt.md                   # Full AI system prompt for the Vision model
+│   └── idea_schema.json               # JSON schema for 5-6 structured photo ideas
+├── pubspec.yaml                       # Flutter dependencies (Dio, Connectivity, Camera, Hive, Riverpod)
 ├── lib/
 │   ├── main.dart                      # App entrypoint, Hive init, ProviderScope
 │   ├── core/
 │   │   ├── constants/
-│   │   │   ├── app_colors.dart        # Photo-first neon dark aesthetic
-│   │   │   ├── app_constants.dart     # Storage keys & ML thresholds
-│   │   │   └── mediapipe_landmarks.dart # 33 Landmark indices & bone pairs
-│   │   ├── theme/
-│   │   │   └── app_theme.dart         # Material 3 dark & light themes
+│   │   │   ├── app_colors.dart        # Neon Mint & Dark aesthetics
+│   │   │   ├── app_constants.dart     # Backend URLs & thresholds
+│   │   │   └── coco_landmarks.dart    # 17 COCO landmark indices & skeleton bones
 │   │   ├── utils/
-│   │   │   ├── angle_calculator.dart  # Pure Dart vector math & joint angles
-│   │   │   ├── haptic_service.dart    # Tactile feedback on milestone matches
-│   │   │   └── image_converter.dart   # CameraImage to InputImage conversion
+│   │   │   ├── angle_calculator.dart  # Pure Dart vector dot product & joint angles
+│   │   │   ├── image_downsampler.dart # Downsamples to max 768px JPEG 70%
+│   │   │   ├── voice_coach_service.dart # Spoken voice hints (TTS)
+│   │   │   └── haptic_service.dart    # Milestone haptic feedback
 │   │   ├── widgets/
-│   │   │   ├── animated_score_badge.dart # Match score pill
-│   │   │   ├── glass_container.dart   # Frosted glass BackdropFilter container
-│   │   │   └── grid_overlay.dart      # Rule of thirds photography grid
-│   │   └── router/
-│   │       └── app_router.dart        # GoRouter navigation
+│   │   │   ├── animated_score_badge.dart
+│   │   │   ├── glass_container.dart
+│   │   │   └── grid_overlay.dart
+│   │   └── router/app_router.dart     # GoRouter navigation
 │   └── features/
-│       ├── camera/
-│       │   ├── data/pose_detector_service.dart   # Throttled ML stream (~15 FPS)
-│       │   ├── domain/match_result.dart          # MatchResult & JointAngleMatch
-│       │   ├── domain/pose_matcher.dart          # Scale-invariant similarity engine
+│       ├── ideas/                     # Fresh AI idea generation feature
+│       │   ├── data/ideas_api_service.dart   # Dio client with offline check
+│       │   ├── domain/photo_idea.dart        # PhotoIdea & SceneAnalysis models
 │       │   └── presentation/
-│       │       ├── camera_screen.dart            # Live viewfinder & overlays
-│       │       ├── camera_view_model.dart        # Riverpod controller & capture logic
+│       │       ├── ideas_view_model.dart     # StateNotifier with rotating thoughts
 │       │       └── widgets/
-│       │           ├── camera_control_bar.dart   # Shutter & auto-capture ring
-│       │           ├── camera_top_bar.dart       # Flash, timer, grid, settings
-│       │           ├── hint_banner.dart          # Actionable tip banner
-│       │           ├── pose_skeleton_painter.dart # CustomPainter overlay
-│       │           └── score_circular_indicator.dart # Circular progress ring
-│       ├── poses/
-│       │   ├── data/
-│       │   │   ├── pose_repository.dart          # JSON loading & multi-filter search
-│       │   │   └── pose_storage_service.dart     # Hive favorites & recents
-│       │   ├── domain/
-│       │   │   ├── pose_category.dart            # Category enum & labels
-│       │   │   └── pose_model.dart               # PoseModel & TargetAngles
+│       │           ├── scan_loading_overlay.dart # Laser sweep & rotating thoughts
+│       │           ├── idea_card.dart            # Swipeable card with thumbs up/down
+│       │           └── idea_detail_sheet.dart    # Full camera tips & start coaching CTA
+│       ├── coaching/                  # Live multi-person pose coaching
+│       │   ├── data/pose_tracker.dart        # Multi-person pose inference (~15 FPS)
+│       │   ├── domain/pose_matcher.dart      # COCO 17 angle matching & group score
+│       │   ├── domain/person_assigner.dart   # Bipartite spatial matcher (auto swaps)
 │       │   └── presentation/
-│       │       ├── pose_picker_sheet.dart        # Bottom sheet modal with grid
-│       │       └── pose_view_model.dart          # Riverpod pose selection state
-│       ├── gallery/
-│       │   ├── data/gallery_repository.dart      # Hive photo metadata manager
-│       │   ├── domain/captured_photo.dart        # Captured photo record
-│       │   └── presentation/
-│       │       ├── gallery_screen.dart           # Grid gallery view
-│       │       └── photo_view_screen.dart        # Fullscreen viewer with share/delete
-│       ├── onboarding/
-│       │   └── presentation/
-│       │       ├── onboarding_screen.dart        # 3-step walkthrough
-│       │       └── permission_screen.dart        # Camera & storage rationale
-│       └── settings/
-│           ├── domain/settings_state.dart        # Preferences state model
-│           └── presentation/
-│               ├── settings_screen.dart          # Settings switches & slider
-│               └── settings_view_model.dart      # Riverpod preferences notifier
+│       │       ├── coaching_screen.dart      # Viewfinder, ghost guides, score pill
+│       │       ├── coaching_view_model.dart  # Stream listener & auto-capture logic
+│       │       └── widgets/
+│       │           └── multi_person_skeleton_painter.dart # CustomPainter overlay
+│       ├── camera/                    # Main camera viewfinder & Get Ideas action
+│       ├── gallery/                   # Gallery with idea metadata & sharing
+│       ├── onboarding/                # 3-step walkthrough & clear privacy notice
+│       └── settings/                  # Style preferences, voice hints, dark mode
 └── test/
-    ├── angle_calculator_test.dart             # Pure Dart math unit tests
-    └── pose_matcher_test.dart                 # Pose similarity & scale invariance tests
+    ├── angle_calculator_test.dart     # Vector angle calculations unit tests
+    ├── pose_matcher_test.dart         # COCO 17 scale-invariance & hints tests
+    └── person_assigner_test.dart      # Multi-person assignment & swap tests
 ```
 
 ---
 
-## 🧮 How the Pose Matching Engine Works
+## 🚀 Setup & Run Instructions
 
-The `PoseMatcher` computes relative joint angles between 3 adjacent landmark vertices:
-- **Left/Right Elbows**: `Angle(Shoulder, Elbow, Wrist)`
-- **Left/Right Shoulders**: `Angle(Elbow, Shoulder, Hip)`
-- **Left/Right Hips**: `Angle(Shoulder, Hip, Knee)`
-- **Left/Right Knees**: `Angle(Hip, Knee, Ankle)`
+### 1. Backend Setup (`functions/`)
 
-$$\cos(\theta) = \frac{\vec{BA} \cdot \vec{BC}}{\|\vec{BA}\| \|\vec{BC}\|}, \quad \theta = \arccos(\text{clamp}(\cos(\theta), -1.0, 1.0)) \times \frac{180^\circ}{\pi}$$
+1. Navigate to the backend directory:
+   ```bash
+   cd pose_muse/functions
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Create your `.env` file with your Anthropic Claude API key:
+   ```bash
+   cp .env.example .env
+   # Open .env and insert your ANTHROPIC_API_KEY
+   ```
+4. Build and start the backend:
+   ```bash
+   npm run build
+   npm start
+   ```
+   The server will listen at `http://localhost:8080`.
 
-### Why this is Scale & Distance Invariant:
-Because similarity is computed using **internal joint angles** rather than absolute pixel distances, the match score remains consistent whether the person is standing close to the camera or far away.
-
----
-
-## 🚀 Setup & Installation Instructions
-
-### Prerequisites
-- **Flutter SDK**: 3.19.0 or higher ([Install Flutter](https://docs.flutter.dev/get-started/install))
-- **Dart SDK**: 3.3.0 or higher
-- **Android**: Android Studio with Android SDK API 34, Min SDK 21
-- **iOS**: macOS with Xcode 15+ and CocoaPods
-
-### 1. Clone & Navigate
-```bash
-git clone https://github.com/arikrishna-03/PoseAI.git
-cd poseai/pose_muse
-```
-
-### 2. Install Dependencies
-```bash
-flutter pub get
-```
-
-### 3. Run Unit Tests
-Verify mathematical angle calculations, scale invariance, and directional hints:
-```bash
-flutter test
-```
-
-### 4. Run on Connected Device
-```bash
-flutter run
-```
+5. Run backend unit tests:
+   ```bash
+   npm test
+   ```
 
 ---
 
-## 📦 Production Build Instructions
+### 2. Mobile App Setup (`pose_muse/`)
 
-### Android Build
+1. Navigate to the Flutter app directory:
+   ```bash
+   cd pose_muse
+   ```
+2. Fetch dependencies:
+   ```bash
+   flutter pub get
+   ```
+3. Run unit tests (testing PoseMatcher scale invariance, AngleCalculator, and PersonAssigner):
+   ```bash
+   flutter test
+   ```
+4. Run on a connected Android/iOS device or emulator:
+   ```bash
+   flutter run
+   ```
+   *(Note: Android Emulator automatically connects to `http://10.0.2.2:8080` to communicate with the local backend).*
 
-#### 1. Generate Debug APK
+---
+
+## 📦 Building for Production
+
+### Android
 ```bash
+# Debug APK
 flutter build apk --debug
-```
-The output APK will be located at `build/app/outputs/flutter-apk/app-debug.apk`.
 
-#### 2. Generate Release APK
-```bash
+# Optimized Release APK
 flutter build apk --release
-```
-The optimized split or fat APK will be at `build/app/outputs/flutter-apk/app-release.apk`.
 
-#### 3. Generate Android App Bundle (.aab) for Google Play
-```bash
+# Google Play App Bundle (.aab)
 flutter build appbundle --release
 ```
-The output AAB will be at `build/app/outputs/bundle/release/app-release.aab`.
 
----
-
-### iOS Build
-
-#### 1. Install CocoaPods
+### iOS
 ```bash
 cd ios
 pod install
 cd ..
-```
-
-#### 2. Build iOS Release Bundle
-```bash
 flutter build ios --release --no-codesign
 ```
-
-#### 3. Create IPA Archive (via Xcode)
-1. Open `ios/Runner.xcworkspace` in Xcode.
-2. Select your development team under **Runner > Signing & Capabilities**.
-3. Select target **Any iOS Device (arm64)**.
-4. Go to **Product > Archive**.
-5. Once the archive completes, click **Distribute App** to export an `.ipa` for TestFlight or Ad-Hoc distribution.
+Open `ios/Runner.xcworkspace` in Xcode to configure your signing identity and archive for App Store / TestFlight distribution.
 
 ---
 
-## 🔒 Privacy & Permissions
+## 🧮 Mathematical Pose Matching & Multi-Person Logic
 
-- **`android.permission.CAMERA` / `NSCameraUsageDescription`**:
-  Required strictly for the live camera viewfinder and real-time landmark detection.
-- **`android.permission.READ_MEDIA_IMAGES` / `NSPhotoLibraryAddUsageDescription`**:
-  Required to save your captured guided photos directly to device storage.
-- No network requests are made.
+### Joint-Angle Invariance
+The `PoseMatcher` computes relative joint angles for elbows, shoulders, hips, and knees:
+$$\cos(\theta) = \frac{\vec{BA} \cdot \vec{BC}}{\|\vec{BA}\| \|\vec{BC}\|}, \quad \theta = \arccos(\text{clamp}(\cos(\theta), -1.0, 1.0)) \times \frac{180^\circ}{\pi}$$
+Because it relies on joint vertices rather than pixel distances, the match score is **100% scale and distance invariant**—a person standing 2 meters or 5 meters from the camera receives the exact same score.
+
+### PersonAssigner (Swap Recovery)
+`PersonAssigner` calculates the centroid of all detected people and matches them to targets (Left, Center, Right) using bipartite cost minimization. If two subjects walk past each other and swap positions, the assigner re-maps them automatically so their target ghost skeletons follow them across the viewfinder.

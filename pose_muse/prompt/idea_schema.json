@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PhotoIdeasResponse",
+  "type": "object",
+  "required": ["ideas"],
+  "properties": {
+    "scene_analysis": {
+      "type": "object",
+      "required": ["location_type", "lighting", "detected_props", "outfit_summary"],
+      "properties": {
+        "location_type": { "type": "string" },
+        "lighting": { "type": "string" },
+        "detected_props": { "type": "array", "items": { "type": "string" } },
+        "outfit_summary": { "type": "string" }
+      }
+    },
+    "ideas": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": [
+          "title",
+          "why_it_works",
+          "style",
+          "difficulty",
+          "camera_tips",
+          "expression_tip",
+          "people"
+        ],
+        "properties": {
+          "title": { "type": "string" },
+          "why_it_works": { "type": "string" },
+          "style": { "type": "string" },
+          "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] },
+          "camera_tips": {
+            "type": "object",
+            "required": ["height", "angle", "distance", "orientation"],
+            "properties": {
+              "height": { "type": "string" },
+              "angle": { "type": "string" },
+              "distance": { "type": "string" },
+              "orientation": { "type": "string", "enum": ["portrait", "landscape"] }
+            }
+          },
+          "expression_tip": { "type": "string" },
+          "people": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["position", "description", "keypoints"],
+              "properties": {
+                "position": { "type": "string", "enum": ["left", "center", "right"] },
+                "description": { "type": "string" },
+                "keypoints": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["x", "y"],
+                    "properties": {
+                      "x": { "type": "number", "minimum": 0, "maximum": 1 },
+                      "y": { "type": "number", "minimum": 0, "maximum": 1 },
+                      "score": { "type": "number", "minimum": 0, "maximum": 1 }
+                    }
+                  },
+                  "minItems": 17,
+                  "maxItems": 17
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

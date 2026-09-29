@@ -91,10 +91,11 @@ class _PermissionScreenState extends State<PermissionScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        '100% Private & Offline. No video or biometric landmarks leave your device.',
+                        'Your snapshot is sent securely to AI to create ideas and is not stored.',
                         style: TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),

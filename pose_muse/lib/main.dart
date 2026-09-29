@@ -13,6 +13,9 @@ void main() async {
   // Initialize Hive offline storage
   await Hive.initFlutter();
   await Hive.openBox(AppConstants.settingsBox);
+  await Hive.openBox(AppConstants.preferencesBox);
+  await Hive.openBox(AppConstants.cachedIdeasBox);
+  await Hive.openBox(AppConstants.galleryBox);
 
   // Set system UI overlay style
   SystemChrome.setSystemUIOverlayStyle(
